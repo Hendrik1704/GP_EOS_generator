@@ -18,7 +18,7 @@ y_test=data[:,1]
 
 # noise/ uncertainity added throught the white kernel
 noise=0.01
-# slope requirements
+# slope requirements, strictly greater than
 slope=0
 #percentage away from the mean
 p = 50
@@ -55,7 +55,7 @@ while i in range (0,number):
 
     def filter(x, y):
         dydx = np.gradient(y, x.flatten())  # creates a two dimensional array
-        indices = np.where(dydx >= slope)[0]  # the [0] creates a new array of valid derivitives
+        indices = np.where(dydx > slope)[0]  # the [0] creates a new array of valid derivitives
         x_f = x[indices]  # the valid elements will create x_f
         # this is incorrect because we only return segments of the curve that work (we then only graph these segments, so a sin curve will have discrete display)
         size=np.size(x_f)
@@ -78,7 +78,9 @@ while i in range (0,number):
         y_set.append(y_simulate)
         print(f"\n\n\n\nWorking Pairs Set {i+1}:", end='\n')
         for k in range(len(x_simulate)):
-            print(f"{x_simulate[k].flatten(), y_simulate[k]}",end='\n')
+            flattened_x=x_simulate.ravel()
+            print(f"{x_simulate[k][0], y_simulate[k]}",end='\n')
+            #the [0] takes the first element in the 1 element array([x_value])--a simple syntax change.
 
         i=i+1
     elif boolean==False:
@@ -96,8 +98,11 @@ while i in range (0,number):
 
 print(f"Filter repeats needed:{len(sample_number)}")
 plt.scatter(sample_number,size_list)
+plt.xlabel('Filter Number')
+plt.ylabel('Equivalent Matching Points')
 plt.title(f"Graph of Each Trial, Trials Needed: {len(sample_number)}")
-
+plt.axhline(y=points, color='r', linestyle='--')
+plt.yticks(ticks=np.append(plt.yticks()[0], points), labels=list(plt.yticks()[0]) + [f'{points}'])
 
 
 for i in range (len(x_set)):
@@ -112,7 +117,7 @@ for i in range (len(x_set)):
     plt.scatter(x_data,y_data, marker='x', color='r', s=10, label=f"Number Original Data Points: {len(x_data)}")
     plt.errorbar(x_data, y_data, yerr=noise * y_data, fmt='none', alpha=0.5, color='blue', label=f'{noise * 100}% Error')
     plt.scatter(x_test,y_test,marker='x', color='orange', s=10, label=f"Number Test Data Points: {len(x_test)}")
-    plt.plot(x_i,y_i, 'k', lw=1, ls='-', label=f'Filtered Curve {i+1}, Filter: dy/dx >= {slope}')
+    plt.plot(x_i,y_i, 'k', lw=1, ls='-', label=f'Filtered Curve {i+1}, Filter: dy/dx > {slope}')
     plt.title(f'Filtered Curve {i+1}')
     plt.xlabel("x--[Temperature (GEV)]")
     plt.ylabel("y--[P$T^{-4}$]")
