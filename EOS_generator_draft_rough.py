@@ -1,29 +1,43 @@
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, WhiteKernel
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel#, CompoundKernel,RationalQuadratic, Matern, DotProduct,ConstantKernel
 import numpy as np
 import matplotlib.pyplot as plt
 
 data=np.loadtxt("EoS_hotQCD.dat", dtype=float, skiprows=0)
-x_data=data[:,0].reshape(-1, 1)
+x_data=data[:,0].reshape(-1, 1) #the x value here must be reshaped so we only input a flat array
 y_data=data[:,1]
 
+
+# use test data only in the scatter plot: not in the actual filtering proccess
 data=np.loadtxt("EoS_hotQCD_full.dat", dtype=float, skiprows=0)
-x_test=data[:,0].reshape(-1, 1)
+x_test=data[:,0].reshape(-1, 1) #the x value here must be reshaped so we only input a flat array
 y_test=data[:,1]
 
+
+#all customizability labeled here
+
+# noise/ uncertainity added throught the white kernel
 noise=0.01
+# slope requirements, strictly greater than
 slope=0
+#percentage away from the mean
 p = 50
 randomness=np.random.seed(2)
+#number of random samples that we want
 number=2
+#changing number points generated in linspace random genrating function
 points=257
 i=0
 f=0
 special_case=0
 
-kernel =WhiteKernel(noise_level=noise) + RBF(length_scale=0.0001818)
+#customize the kernel used: here, we have noise(uncertainty) with the white kernel)
+
+#you haven't done anything with the kernel here
+kernel =WhiteKernel(noise_level=noise) + RBF(length_scale=0.001818) #0.0001818 is the cutoff value until the curve oscillates without any fillters
 gpr = GaussianProcessRegressor(kernel=kernel, alpha=1e-2)
 gpr.fit(x_data, y_data)
+#y_mean, y_std = gpr.predict(Values_x, return_std=True)
 
 x_set=[]
 y_set=[]
@@ -40,15 +54,22 @@ max = np.max(x_data)
 print(f"Minimum of the datapoints is: {min}")
 print(f"Maximum of the datapoints is: {max}")
 
+#this for loop will try vales of randomly generated function until
 while i in range (0,number):
+    # create a while loop such that for each sample , we create a now set of data ponts, we must add numpy arrays to a pandas data frame
     x_simulate = np.linspace(min, max, points).reshape(-1, 1)
     y_simulate = gpr.sample_y(x_simulate, 1, random_state=randomness).flatten()
-    dydx = np.gradient(y_simulate, x_simulate.flatten())
+    dydx = np.gradient(y_simulate, x_simulate.flatten())  # creates a two dimensional array
 
     def filter(x, y):
-        indices = np.where(dydx > slope)[0]
-        x_f = x[indices]
+        indices = np.where(dydx > slope)[0]  # the [0] creates a new array of valid derivitives
+        x_f = x[indices]  # the valid elements will create x_f
+        # this is incorrect because we only return segments of the curve that work (we then only graph these segments, so a sin curve will have discrete display)
         size=np.size(x_f)
+
+#this will print the values of desired (x) and x_f which is the trial
+        # print(len(x_f))
+        # print(len(x))
 
         size_list.append(len(x_f))
         sample_number.append(f+1)
@@ -68,6 +89,7 @@ while i in range (0,number):
         for k in range(len(x_simulate)):
             flattened_x=x_simulate.ravel()
             print(f"{x_simulate[k][0], y_simulate[k]}",end='\n')
+            #the [0] takes the first element in the 1 element array([x_value])--a simple syntax change.
 
         min_sim = np.min(x_simulate)
         max_sim = np.max(x_simulate)
@@ -79,6 +101,14 @@ while i in range (0,number):
 
     elif boolean==False:
         i=i
+    #i is the number of samples that work
+
+#these values will actually show each trial
+    # print(size_list)
+    # print(sample_number)
+
+    #print(f"Trial {f+1}")
+    #f counts the total number of times the filter has run
     f=f+1
 
 
@@ -94,10 +124,17 @@ for t in range(0, len(min_simulated)): #because min_simulated and max_simulated 
 
 for k in range (0, len(working_count)):
     plt.axvline(x=working_count[k], color='r', linestyle='--')
+# Force matplotlib to draw the plot to make sure all updates are processed
+
+# Retrieve the current y-tick values directly as numbers
+# tick_values = plt.gca().get_yticks()
+# low_tick = min(tick_values)
+# print(tick_values)
 
 
 for tick in working_count:
     plt.text(tick, points, f'{tick}', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transData, color='k')
+    #plt.xticks(ticks=working_count, labels=[f"{int(tick)}" for tick in working_count])
 plt.scatter(sample_number,size_list)
 plt.xlabel('Filter Number')
 plt.ylabel('Equivalent Matching Points')
