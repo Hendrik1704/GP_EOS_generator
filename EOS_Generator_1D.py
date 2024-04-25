@@ -122,7 +122,7 @@ for i in range (len(x_set)):
     plt.scatter(x_data,y_data, marker='x', color='r', s=10, label=f"Number Original Data Points: {len(x_data)}")
     plt.errorbar(x_data, y_data, yerr=noise * y_data, fmt='none', alpha=0.5, color='blue', label=f'{noise * 100}% Error')
     plt.scatter(x_test,y_test,marker='x', color='orange', s=10, label=f"Number Test Data Points: {len(x_test)}")
-    plt.plot(x_i,y_i, 'k', lw=1, ls='-', label=f'Filtered Curve {i+1}, Filter: dy/dx > {slope}')
+    plt.plot(x_i,y_i, 'k', lw=1, ls='-', label=f'Filtered Curve {i+1}, Filter: dy/dx > {slope}, d^2y/dx^2 > 2nd derivitive, sound squared restraint=$C^{2}$)')
     plt.title(f'Filtered Curve {i+1}')
     plt.xlabel("x--[Temperature (GEV)]")
     plt.ylabel("y--[P$T^{-4}$]")
