@@ -46,7 +46,7 @@ print(pressure_test)
 #all customizability labeled here
 randomness=np.random.seed(3)
 
-
+#
 u_b=np.random.randint(45,55)
 u_s=np.random.randint(45,55)
 u_q=np.random.randint(45,55)
@@ -60,12 +60,14 @@ noise=0.01
 # slope requirements, strictly greater than
 slope=0
 two_slope=0
+
+
 #percentage away from the mean
 p = 50
 #number of random samples that we want
 number=2
 #changing number points generated in linspace random genrating function
-points=75
+points=60
 i=0
 f=0
 special_case=0
@@ -137,23 +139,19 @@ while i in range (0,number):
         else:
             return False
 
-    def filter_sound5(x,y): #  e=T*s-P+u(b)*n(b)+u(q)*n(q)+u(s)n(s)
+    def filter_sound5(T,P): #  e=T*s-P+u(b)*n(b)+u(q)*n(q)+u(s)n(s)
         # we must take the derivitive of this equation in terms of temperature
-        dydx = np.gradient(y, x.flatten())  # creates dydx for the simulated points--- firstly define deritive for entropy like before; dp/dt
-        pressure_array = np.array(pressure_list)
-        e_values = []
-        e_derivtive = []
+        dPdT = np.gradient(P, T)  # creates dydx for the simulated points--- firstly define deritive for entropy like before; dp/dt
 
-        for k in pressure_list: # this will alwats produce same number as in the pressure_list
+        e=T * dPdT-P    #+u_b * n_b+u_q * n_q+u_s * n_s  #pressure is negligible here cocmpared to u_b
+        #e_values.append(e)
+        dPdE = np.gradient(P,e)  # creates dydx for the simulated points--- firstly define deritive for entropy like before; dp/dt
+        #e_derivtive.append(dydx_e)
 
-            e=x * dydx-pressure_array[k]+u_b * n_b+u_q * n_q+u_s * n_s  #pressure is negligible here cocmpared to u_b
-            e_values.append(e)
-            dydx_e = np.gradient(e_values,x.flatten())  # creates dydx for the simulated points--- firstly define deritive for entropy like before; dp/dt
-            e_derivtive.append(dydx_e)
-        index=np.where(e_derivtive==pow(343,2))[0] #will change due to the temperature of dense conditions
-        pressure_f=x[index]
+        index=np.where(0<dPdE and dPdE<1)[0] #will change due to the temperature of dense conditions
+        pressure_f=T[index]
 
-        if len(e_derivtive)==len(pressure_f):
+        if len(dPdE)==len(pressure_f):
             # indices = np.where(dydx > m)[0]  # the [0] creates a new array of valid derivitives that pass the test
             # x_f = x[indices]
             return True
@@ -167,8 +165,8 @@ while i in range (0,number):
     boolean2=filter_sound5(x_simulate, y_simulate)
 
 
-
-    if boolean==True and boolean1==True and boolean2==True:
+    if boolean==True and boolean1==True and boolean2==True
+:
         x_set.append(x_simulate.flatten())
         y_set.append(y_simulate)
         print(f"\n\n\n\nWorking Pairs Set {i+1}:\n\n", end='\n')
