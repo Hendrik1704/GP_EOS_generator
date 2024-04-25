@@ -57,6 +57,10 @@ while i in range (0,number):
             return True
         else:
             return False
+    def filter_sound5(x,y):
+        pass
+
+
     boolean=filter(x_simulate, y_simulate)
 
     boolean1=filter(x_simulate, dydx)
