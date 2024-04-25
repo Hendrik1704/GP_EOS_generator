@@ -16,12 +16,12 @@ slope=0
 p = 50
 randomness=np.random.seed(2)
 number=2
-points=257
+points=350
 i=0
 f=0
 special_case=0
 
-kernel =WhiteKernel(noise_level=noise) + RBF(length_scale=0.0001818)
+kernel =WhiteKernel(noise_level=noise) + RBF(length_scale=0.001818)
 gpr = GaussianProcessRegressor(kernel=kernel, alpha=1e-2)
 gpr.fit(x_data, y_data)
 
@@ -124,5 +124,3 @@ for i in range (len(x_set)):
     plt.ylabel("y--[P$T^{-4}$]")
     plt.legend(title="Legend", loc='lower right', fontsize='x-small')
     plt.show()
-
-

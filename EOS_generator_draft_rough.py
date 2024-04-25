@@ -6,13 +6,37 @@ import matplotlib.pyplot as plt
 data=np.loadtxt("EoS_hotQCD.dat", dtype=float, skiprows=0)
 x_data=data[:,0].reshape(-1, 1) #the x value here must be reshaped so we only input a flat array
 y_data=data[:,1]
-
+print(y_data)
 
 # use test data only in the scatter plot: not in the actual filtering proccess
 data=np.loadtxt("EoS_hotQCD_full.dat", dtype=float, skiprows=0)
 x_test=data[:,0].reshape(-1, 1) #the x value here must be reshaped so we only input a flat array
 y_test=data[:,1]
 
+print(y_test)
+pressure_list=[]
+
+for k in range(0, len(x_data)):
+    k_value=x_data[k]
+    power4=np.power(k_value, 4)
+    final_pressure=power4*y_data[k]
+    #print(final_pressure[k])
+    pressure_list.append(final_pressure[0])
+
+print((pressure_list))
+print(len(x_data))
+
+data=np.loadtxt("EoS_hotQCD_full.dat", dtype=float, skiprows=0)
+x_test=data[:,0].reshape(-1, 1)
+y_test=data[:,1]
+pressure_test=[]
+for k in range(0, len(x_test)):
+    k_value=x_test[k]
+    power4=np.power(k_value, 4)
+    final_pressure=power4*y_test[k]
+    #print(final_pressure[k])
+    pressure_test.append(final_pressure[0])
+print(pressure_test)
 
 #all customizability labeled here
 
@@ -26,7 +50,7 @@ randomness=np.random.seed(2)
 #number of random samples that we want
 number=2
 #changing number points generated in linspace random genrating function
-points=257
+points=75
 i=0
 f=0
 special_case=0
@@ -34,9 +58,9 @@ special_case=0
 #customize the kernel used: here, we have noise(uncertainty) with the white kernel)
 
 #you haven't done anything with the kernel here
-kernel =WhiteKernel(noise_level=noise) + RBF(length_scale=0.001818) #0.0001818 is the cutoff value until the curve oscillates without any fillters
+kernel =WhiteKernel(noise_level=noise) + RBF(length_scale=1.001818) #0.0001818 is the cutoff value until the curve oscillates without any fillters
 gpr = GaussianProcessRegressor(kernel=kernel, alpha=1e-2)
-gpr.fit(x_data, y_data)
+gpr.fit(x_data, pressure_list)
 #y_mean, y_std = gpr.predict(Values_x, return_std=True)
 
 x_set=[]
@@ -60,7 +84,8 @@ while i in range (0,number):
     x_simulate = np.linspace(min, max, points).reshape(-1, 1)
     y_simulate = gpr.sample_y(x_simulate, 1, random_state=randomness).flatten()
     dydx = np.gradient(y_simulate, x_simulate.flatten())  # creates a two dimensional array
-
+    #print(y_simulate)
+    #print(f"LISSSSSSSSSSSSSS: {pressure_list}" )
     def filter(x, y):
         indices = np.where(dydx > slope)[0]  # the [0] creates a new array of valid derivitives
         x_f = x[indices]  # the valid elements will create x_f
@@ -82,6 +107,8 @@ while i in range (0,number):
 
     boolean1=filter(x_simulate, dydx)
 
+
+
     if boolean==True and boolean1==True:
         x_set.append(x_simulate.flatten())
         y_set.append(y_simulate)
@@ -97,6 +124,9 @@ while i in range (0,number):
         min_simulated.append(min_sim)
         max_simulated.append(max_sim)
         working_count.append(f+1)
+        print(size_list)
+        print(sample_number)
+        print(f"Trial {f + 1}")
         i=i+1
 
     elif boolean==False:
@@ -104,10 +134,8 @@ while i in range (0,number):
     #i is the number of samples that work
 
 #these values will actually show each trial
-    # print(size_list)
-    # print(sample_number)
+    print(f"Trial {f + 1}")
 
-    #print(f"Trial {f+1}")
     #f counts the total number of times the filter has run
     f=f+1
 
@@ -152,13 +180,13 @@ for i in range (len(x_set)):
     plt.fill_between(x_i.flatten(), (1 - noise) * y_mean - 2 * y_std, (1 + noise) * y_mean + 2 * y_std, color='orange', label='95% confidence level', alpha=0.2)
     plt.fill_between(x_i.flatten(), (1 - noise) * y_mean - 3 * y_std, (1 + noise) * y_mean + 3 * y_std, color='yellow', label='99.7% confidence level', alpha=0.2)
 
-    plt.scatter(x_data,y_data, marker='x', color='r', s=10, label=f"Number Original Data Points: {len(x_data)}")
-    plt.errorbar(x_data, y_data, yerr=noise * y_data, fmt='none', alpha=0.5, color='blue', label=f'{noise * 100}% Error')
-    plt.scatter(x_test,y_test,marker='x', color='orange', s=10, label=f"Number Test Data Points: {len(x_test)}")
+    plt.scatter(x_data,pressure_list, marker='x', color='r', s=10, label=f"Number Original Data Points: {len(x_data)}")
+    plt.errorbar(x_data, pressure_list, yerr=noise * y_data, fmt='none', alpha=0.5, color='blue', label=f'{noise * 100}% Error')
+    plt.scatter(x_test,pressure_test,marker='x', color='orange', s=10, label=f"Number Test Data Points: {len(x_test)}")
     plt.plot(x_i,y_i, 'k', lw=1, ls='-', label=f'Filtered Curve {i+1}, Filter: dy/dx > {slope}')
     plt.title(f'Filtered Curve {i+1}')
     plt.xlabel("x--[Temperature (GEV)]")
-    plt.ylabel("y--[P$T^{-4}$]")
+    plt.ylabel("y--[P]") #P$T^{-4}$ power notation in scatterplot
     plt.legend(title="Legend", loc='lower right', fontsize='x-small')
     plt.show()
 
