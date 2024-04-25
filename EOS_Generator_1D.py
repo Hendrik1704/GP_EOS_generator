@@ -11,59 +11,87 @@ data=np.loadtxt("EoS_hotQCD_full.dat", dtype=float, skiprows=0)
 x_test=data[:,0].reshape(-1, 1)
 y_test=data[:,1]
 
-noise=0.01
-slope=0
-p = 50
+noise=0.01 #the uncertainty which is fed into both the white kernel and the errorbar
+slope=0 #this is the slope for the 1st derivitive, and is also the restiction for the second derivitive
+
 randomness=np.random.seed(2)
-number=2
-points=350
-i=0
-f=0
-special_case=0
+number_of_successful_trials=2 #this is the number of successfully-filtered graphs we want to create in the while loop
+linspace_simulated_points=100 #the fewer the points, the faster the computer runs the trials
+i=0 #used in the while loop and is equal to the number of successful trials of the samples (number_of_successful_trials)
+f=0 #used in the while loop and counts the total number of attempts the while loop repeats
 
-kernel =WhiteKernel(noise_level=noise) + RBF(length_scale=0.001818)
+kernel =WhiteKernel(noise_level=noise) + RBF(length_scale=0.501818)
 gpr = GaussianProcessRegressor(kernel=kernel, alpha=1e-2)
-gpr.fit(x_data, y_data)
+#gpr.fit(x_data, y_data)
 
-x_set=[]
-y_set=[]
+x_working_set=[] #appending the simulated x values that work after testing the filters
+y_working_set=[] #appending the simulated y values that work after testing the filters
 
-size_list=[]
-sample_number= []
 
-working_count=[]
-min_simulated=[]
-max_simulated=[]
+#Trial:, Number of working linspace values:
+working_simulated=[] # the number of working points from the total number of simulated points
+number_iterations_while=[] # a list of 1 to f, where f is defined as the total number of times the while loop has run for a trial to work
+# - will repeat numbers because the derivitive filter is outside while. corresponds to the different first and second derivitive values in working_simulated
 
-min = np.min(x_data)
-max = np.max(x_data)
+working_trial_number=[] #elements show the number of iterations of the while loop until a successful trial is added, each subsequent element is the number of while loop repeats from the most recent term
+
+min_simulated=[] #indicate the minimim x_value of the simulated points- could be equal to min_data
+max_simulated=[] #indicate the minimim x_value of the simulated points- could be equal to min_data
+
+#print out the minimum and maximum values of the training data x_values
+min_data = np.min(x_data) # the min of actual data points
+max_data = np.max(x_data) # the max of actual data points
 print(f"Minimum of the datapoints is: {min}")
 print(f"Maximum of the datapoints is: {max}")
 
-while i in range (0,number):
-    x_simulate = np.linspace(min, max, points).reshape(-1, 1)
+def derivitive_filter(x, y):  # put outside the while loop , put the dydx into  the filter for local variable to prevent confusion
+    dydx = np.gradient(y, x)
+    indices = dydx > slope #don't use np.where, instead just have the requirment written
+    x_f = x[indices]
+    print(len(x_f))
+    print(len(x))
+    working_simulated.append(len(x_f))
+    number_iterations_while.append(f + 1)
+
+    if len(x_f) == len(x):
+        return True
+    else:
+        return False
+
+def speed_sound_squared_filter(T, P):
+    dPdT = np.gradient(P,T)  # creates dPdT for the simulated points--- firstly define deritive for entropy like before; dp/dt
+
+    e = T * dPdT - P  # +u_b * n_b+u_q * n_q+u_s * n_s  #these values can be ignored
+    dPdE = np.gradient(P,e)
+    index = (0 < dPdE) & (dPdE < 1)  # will change due to the temperature of dense conditions
+    pressure_f = T[index]
+
+    print(len(pressure_f))
+    print(len(dPdE))
+
+
+    if len(dPdE) == len(pressure_f):
+        return True
+    else:
+        return False
+
+while i in range (0,number_of_successful_trials):
+    x_simulate = np.linspace(min_data, max_data, linspace_simulated_points).reshape(-1, 1)
     y_simulate = gpr.sample_y(x_simulate, 1, random_state=randomness).flatten()
+    y_simulate=x_simulate.flatten()**4*y_simulate #y_simulate is now the pressure- we interplot about pressure, then divide out in the end
     dydx = np.gradient(y_simulate, x_simulate.flatten())
 
-    def filter(x, y):
-        indices = np.where(dydx > slope)[0]
-        x_f = x[indices]
-        size=np.size(x_f)
+    boolean_1_derivitive=derivitive_filter(x_simulate.flatten(), y_simulate)
 
-        size_list.append(len(x_f))
-        sample_number.append(f+1)
+    boolean_2_derivitive=derivitive_filter(x_simulate.flatten(), dydx)
 
-        if len(x_f)==len(x):
-            return True
-        else:
-            return False
-    boolean=filter(x_simulate, y_simulate)
+    boolean_speedsound=speed_sound_squared_filter(x_simulate.flatten(), y_simulate)
 
-    boolean1=filter(x_simulate, dydx)
+    print(boolean_1_derivitive,boolean_2_derivitive,boolean_speedsound)
 
-    if boolean==True and boolean1==True:
-        x_set.append(x_simulate.flatten())
-        y_set.append(y_simulate)
+    if boolean_1_derivitive==True and boolean_2_derivitive==True and boolean_speedsound==True:
+        x_working_set.append(x_simulate.flatten())
+        y_working_set.append(y_simulate)
         print(f"\n\n\n\nWorking Pairs Set {i+1}:\n\n", end='\n')
         for k in range(len(x_simulate)):
             flattened_x=x_simulate.ravel()
@@ -74,51 +102,49 @@ while i in range (0,number):
 
         min_simulated.append(min_sim)
         max_simulated.append(max_sim)
-        working_count.append(f+1)
+        working_trial_number.append(f+1)
         i=i+1
 
-    elif boolean==False:
+    elif boolean_1_derivitive==False:
         i=i
+    # print(working_simulated)
+    # print(number_iterations_while)
+
     f=f+1
 
-
-print(f"Filter repeats needed:{len(sample_number)}")
-for t in range(0, len(working_count)):
-    print(f"Trials needed for successful sample {t+1}: {working_count[t]}")
+print(f"Filter repeats needed:{len(number_iterations_while)}")
+for t in range(0, len(working_trial_number)):
+    print(f"Trials needed for successful sample {t+1}: {working_trial_number[t]}")
 for t in range(0, len(min_simulated)): #because min_simulated and max_simulated have the same length
     print(f"Min Simulated Point for Case {t+1}: {min_simulated[t]}")
     print(f"Max Simulated Point for Case: {t + 1}: {max_simulated[t]}")
 
+#creates veticle lines to indicate where the working x values lie on the x-axis
+for k in range (0, len(working_trial_number)):
+    plt.axvline(x=working_trial_number[k], color='r', linestyle='--')
 
-
-
-for k in range (0, len(working_count)):
-    plt.axvline(x=working_count[k], color='r', linestyle='--')
-
-
-for tick in working_count:
-    plt.text(tick, points, f'{tick}', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transData, color='k')
-plt.scatter(sample_number,size_list)
+#creates custom number on the dots that work that show the number of trials needed until successful trial is reached
+for tick in working_trial_number:
+    plt.text(tick, linspace_simulated_points, f'{tick}', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transData, color='k')
+plt.scatter(number_iterations_while,working_simulated)
 plt.xlabel('Filter Number')
 plt.ylabel('Equivalent Matching Points')
-plt.title(f"Graph of Each Trial, Trials Needed: {len(sample_number)}")
-plt.axhline(y=points, color='r', linestyle='--')
-plt.yticks(ticks=np.append(plt.yticks()[0], points), labels=list(plt.yticks()[0]) + [f'{points}'])
+plt.title(f"Graph of Each Trial, Trials Needed: {len(number_iterations_while)}")
+plt.axhline(y=linspace_simulated_points, color='r', linestyle='--')
+plt.yticks(ticks=np.append(plt.yticks()[0], linspace_simulated_points), labels=list(plt.yticks()[0]) + [f'{linspace_simulated_points}'])
 
-
-for i in range (len(x_set)):
+for i in range (len(x_working_set)):
     plt.figure(figsize=(10, 5))
-    x_i=x_set[i].reshape(-1,1)
-    y_i=y_set[i]
+    x_i=x_working_set[i].reshape(-1,1)
+    y_i=y_working_set[i]
     y_mean, y_std = gpr.predict(x_i, return_std=True)  # this will return y_mean that is the size of the filtered points
     plt.fill_between(x_i.flatten(), (1 - noise) * y_mean - 1 * y_std, (1 + noise) * y_mean + 1 * y_std, color='red', label='68% confidence level', alpha=0.2)
     plt.fill_between(x_i.flatten(), (1 - noise) * y_mean - 2 * y_std, (1 + noise) * y_mean + 2 * y_std, color='orange', label='95% confidence level', alpha=0.2)
     plt.fill_between(x_i.flatten(), (1 - noise) * y_mean - 3 * y_std, (1 + noise) * y_mean + 3 * y_std, color='yellow', label='99.7% confidence level', alpha=0.2)
-
     plt.scatter(x_data,y_data, marker='x', color='r', s=10, label=f"Number Original Data Points: {len(x_data)}")
     plt.errorbar(x_data, y_data, yerr=noise * y_data, fmt='none', alpha=0.5, color='blue', label=f'{noise * 100}% Error')
     plt.scatter(x_test,y_test,marker='x', color='orange', s=10, label=f"Number Test Data Points: {len(x_test)}")
-    plt.plot(x_i,y_i, 'k', lw=1, ls='-', label=f'Filtered Curve {i+1}, Filter: dy/dx > {slope}')
+    plt.plot(x_i.flatten(),y_i/(x_i.flatten()**4), 'k', lw=1, ls='-', label=f'Filtered Curve {i+1}, Filter: dy/dx > {slope}, d^2y/dx^2 > 2nd derivitive, sound squared restraint=$C^{2}$)')
     plt.title(f'Filtered Curve {i+1}')
     plt.xlabel("x--[Temperature (GEV)]")
     plt.ylabel("y--[P$T^{-4}$]")
