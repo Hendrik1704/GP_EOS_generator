@@ -28,14 +28,18 @@ gpr.fit(x_data, y_data)
 # gpr_derivitive.fit()
 
 
-x_working_set=[] #appending the simulated x values that work after testing the filters
+x_working_set=[] #appending the simulated x values that work after testing the filters #creats a list of arrays
 y_working_set=[] #appending the simulated y values that work after testing the filters
 
 
 #Trial:, Number of working linspace values:
 working_simulated_1_derivitive=[] # the number of working points from the total number of simulated points
 working_simulated_2_derivitive=[]
-working_simulated_sound=[]
+working_simulated_sound=[] #this is the total number of points that work after the speed of sound filter
+
+
+working_computed_speed_sound=[]
+
 
 number_iterations_while=[] # a list of 1 to f, where f is defined as the total number of times the while loop has run for a trial to work
 # - will repeat numbers because the derivitive filter is outside while. corresponds to the different first and second derivitive values in working_simulated
@@ -87,7 +91,7 @@ def speed_sound_squared_filter(T, P):
     e = T * dPdT - P  # +u_b * n_b+u_q * n_q+u_s * n_s  #these values can be ignored
     dPdE = np.gradient(P,e)
     index = (0 < dPdE) & (dPdE < 1)  # will change due to the temperature of dense conditions
-    after_sound_filter = T[index]
+    after_sound_filter = T[index] #this creates valid x values that correspond to relevent sound squared values
 
     print(f"Required Sound Filter (numerical):{len(dPdE)}")
     print(f"(Achieved Value: {len(after_sound_filter)}")
@@ -97,6 +101,17 @@ def speed_sound_squared_filter(T, P):
         return True
     else:
         return False
+
+def compute_speed_of_sound_square (T,P):
+    dPdT = np.gradient(P,T)  # creates dPdT for the simulated points--- firstly define deritive for entropy like before; dp/dt
+    e = T * dPdT - P  # +u_b * n_b+u_q * n_q+u_s * n_s  #these values can be ignored
+
+    dPdE = np.gradient(P, e) #here, dPdE will equal the speed of sound squared, as listed in the overleaf document
+
+    c_squared=dPdE #both of these are lists of values
+    working_computed_speed_sound.append(c_squared)
+
+
 
 while i in range (0,number_of_successful_trials):
     x_simulate = np.linspace(min_data, max_data , linspace_simulated_points).reshape(-1, 1)
@@ -126,6 +141,10 @@ while i in range (0,number_of_successful_trials):
         min_simulated_pressure.append(min_sim)
         max_simulated_pressure.append(max_sim)
         working_trial_number.append(f+1)
+
+        compute_speed_of_sound_square(x_simulate.flatten(),y_simulate)
+
+
         i=i+1
 
     elif boolean_1_derivitive==False:
@@ -143,7 +162,6 @@ for t in range(0, len(working_trial_number)):
 for t in range(0, len(min_simulated_pressure)): #because min_simulated and max_simulated have the same length
     print(f"Min y Simulated Point [P] for Case {t+1}: {min_simulated_pressure[t]}")
     print(f"Max y Simulated Point [P] for Case: {t + 1}: {max_simulated_pressure[t]}")
-
 
 
 #creates custom number on the dots that work that show the number of trials needed until successful trial is reached
@@ -186,6 +204,7 @@ for tick in working_trial_number:
 plt.legend(title="Legend", loc='upper left', fontsize='x-small')
 plt.show()
 
+
 for i in range (len(x_working_set)):
     plt.figure(figsize=(10, 5))
     x_i=x_working_set[i].reshape(-1,1)
@@ -203,3 +222,13 @@ for i in range (len(x_working_set)):
     plt.ylabel("y--[P$T^{-4}$]")
     plt.legend(title="Legend", loc='lower right', fontsize='x-small')
     plt.show()
+    # x_working_set[i] will be a array, as we put arrays of numbers into a list in x_working_set
+    plt.plot(x_i.flatten(), working_computed_speed_sound[i], 'k', lw=1, ls='-',label=f'Working Speed')
+
+    plt.title(f'Speed of Sound Curve {i + 1}')
+    plt.xlabel("x--[Temperature (GEV)]")
+    plt.ylabel("y--[Speed of Sound Squared]")
+    plt.legend(title="Legend", loc='lower right', fontsize='x-small')
+
+    plt.show()
+
