@@ -59,9 +59,9 @@ def is_a_physical_eos(T, P) -> bool:
     if not derivative_filter(T, P):
         return False
 
-    #dPdT = compute_derivative(P, T)
-    #if not derivative_filter(T, dPdT):
-    #    return False
+    dPdT = compute_derivative(T, P)
+    if not derivative_filter(T, dPdT):
+        return False
 
     if not speed_sound_squared_filter(T, P):
         return False
@@ -85,11 +85,11 @@ def main():
     # set the random seed
     randomness = np.random.seed(19)
 
-    number_of_EoS = 10
+    number_of_EoS = 200
 
     # define GP kernel
-    kernel = RBF(length_scale=1.0, length_scale_bounds=(1e-1, 100))
-    gpr = GaussianProcessRegressor(kernel=kernel, alpha=1e-4)
+    kernel = RBF(length_scale=0.2, length_scale_bounds=(1e-3, 100))
+    gpr = GaussianProcessRegressor(kernel=kernel, alpha=1e-5)
 
     # train GP with log(T) vs. log(P/T^4) because all the quantities
     # are positive
@@ -102,23 +102,27 @@ def main():
     EOS_set = []
 
     iSuccess = 0
-    iter = 1
+    iter = 0
+    nsamples_per_batch = 100
     while iSuccess < number_of_EoS:
-        if iter % 100 == 0:
-            print(f"Sample success rate: {float(iSuccess)/iter}")
-        log_PoverT4_GP = gpr.sample_y(log_T_GP, 1,
-                                      random_state=randomness).flatten()
-        P_GP = np.exp(log_PoverT4_GP)*(T_GP**4)       # convert to P
-        if is_a_physical_eos(T_GP, P_GP):
-            EOS_set.append(P_GP)
-            iSuccess += 1
-        iter += 1
-    print(f"Sample success rate: {float(iSuccess)/iter:.3f}")
+        log_PoverT4_GP = gpr.sample_y(log_T_GP, nsamples_per_batch,
+                                      random_state=randomness).transpose()
+        for sample_i in log_PoverT4_GP:
+            P_GP = np.exp(sample_i)*(T_GP**4)       # convert to P
+            if is_a_physical_eos(T_GP, P_GP):
+                EOS_set.append(P_GP)
+                iSuccess += 1
+                if iSuccess == number_of_EoS:
+                    break
+        iter += nsamples_per_batch
+        print(f"Sample success rate: {float(iSuccess)/iter:.3f}")
 
     # make verification plots
     plt.figure()
     plt.scatter(training_data[:, 0], training_data[:, 1],
                 marker='x', color='r', s=20, label="training data")
+    plt.scatter(validation_data[:, 0], validation_data[:, 1],
+                marker='+', color='b', s=20, label="validation data")
     for i in range(number_of_EoS):
         plt.plot(T_GP, EOS_set[i]/T_GP**4, '-')
 
