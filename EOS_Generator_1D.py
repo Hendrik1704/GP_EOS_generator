@@ -46,8 +46,9 @@ def derivative_filter(x, y) -> bool:
 def speed_sound_squared_filter(T, P):
     """This filter ensures the speed of sound square is between 0 and 1"""
     cs2 = compute_speed_of_sound_square(T, P)
+    cs2 = cs2[2:-2]
     index = (cs2 > 0.) & (cs2 < 1.)
-    physical_points = T[index]
+    physical_points = cs2[index]
 
     if len(cs2) == len(physical_points):
         return True
@@ -83,9 +84,9 @@ def main():
     validation_data = np.loadtxt("EoS_hotQCD_full.dat")
 
     # set the random seed
-    randomness = np.random.seed(19)
+    randomness = np.random.seed(23)
 
-    number_of_EoS = 200
+    number_of_EoS = 1000
 
     # define GP kernel
     kernel = RBF(length_scale=0.2, length_scale_bounds=(1e-3, 100))
@@ -149,7 +150,7 @@ def main():
     plt.figure()
     for i in range(number_of_EoS):
         cs2 = compute_speed_of_sound_square(T_GP, EOS_set[i])
-        plt.plot(T_GP, cs2, '-')
+        plt.plot(T_GP[2:-2], cs2[2:-2], '-')
 
     plt.xlim([0, 0.5])
     plt.ylim([0, 1.0])
