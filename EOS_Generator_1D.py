@@ -8,7 +8,6 @@ def compute_derivative(x, y):
     """This function compute dy/dx using finite difference"""
     dydx = np.zeros(len(y))
     dydx[1:-1] = (y[2:] - y[:-2])/(x[2:] - x[:-2])
-    #dydx[1:] = (y[1:] - y[:-1])/(x[1:] - x[:-1])
     dydx[0] = (y[1] - y[0])/(x[1] - x[0])
     dydx[-1] = (y[-1] - y[-2])/(x[-1] - x[-2])
     return(dydx)
@@ -43,7 +42,7 @@ def derivative_filter(x, y) -> bool:
         return False
 
 
-def speed_sound_squared_filter(T, P):
+def speed_sound_squared_filter(T, P) -> bool:
     """This filter ensures the speed of sound square is between 0 and 1"""
     cs2 = compute_speed_of_sound_square(T, P)
     cs2 = cs2[2:-2]
@@ -70,7 +69,7 @@ def is_a_physical_eos(T, P) -> bool:
     return True
 
 
-def main():
+def main(ranSeed: int, number_of_EoS: int, bLogFlag: bool) -> None:
     # load the training data
     training_data = np.loadtxt("EoS_hotQCD.dat")
 
@@ -84,21 +83,29 @@ def main():
     validation_data = np.loadtxt("EoS_hotQCD_full.dat")
 
     # set the random seed
-    randomness = np.random.seed(23)
-
-    number_of_EoS = 1000
+    if ranSeed >= 0:
+        randomness = np.random.seed(ranSeed)
+    else:
+        randomness = np.random.seed()
 
     # define GP kernel
     kernel = RBF(length_scale=0.2, length_scale_bounds=(1e-3, 100))
     gpr = GaussianProcessRegressor(kernel=kernel, alpha=1e-5)
 
-    # train GP with log(T) vs. log(P/T^4) because all the quantities
-    # are positive
-    x_train = np.log(training_data[:, 0]).reshape(-1, 1)
-    gpr.fit(x_train, np.log(training_data[:, 1]))
-    print(f"GP score: {gpr.score(x_train, np.log(training_data[:, 1]))}")
-    log_T_GP = np.linspace(np.log(T_min), np.log(T_max), 100).reshape(-1, 1)
-    T_GP = np.exp(log_T_GP.flatten())
+    if bLogFlag:
+        # train GP with log(T) vs. log(P/T^4) because all the quantities
+        # are positive
+        x_train = np.log(training_data[:, 0]).reshape(-1, 1)
+        gpr.fit(x_train, np.log(training_data[:, 1]))
+        print(f"GP score: {gpr.score(x_train, np.log(training_data[:, 1]))}")
+        T_GP = np.linspace(np.log(T_min), np.log(T_max), 100).reshape(-1, 1)
+        T_plot = np.exp(T_GP.flatten())
+    else:
+        x_train = training_data[:, 0].reshape(-1, 1)
+        gpr.fit(x_train, training_data[:, 1])
+        print(f"GP score: {gpr.score(x_train, training_data[:, 1])}")
+        T_GP = np.linspace(T_min, T_max, 100).reshape(-1, 1)
+        T_plot = T_GP.flatten()
 
     EOS_set = []
 
@@ -106,11 +113,14 @@ def main():
     iter = 0
     nsamples_per_batch = 100
     while iSuccess < number_of_EoS:
-        log_PoverT4_GP = gpr.sample_y(log_T_GP, nsamples_per_batch,
-                                      random_state=randomness).transpose()
-        for sample_i in log_PoverT4_GP:
-            P_GP = np.exp(sample_i)*(T_GP**4)       # convert to P
-            if is_a_physical_eos(T_GP, P_GP):
+        PoverT4_GP = gpr.sample_y(T_GP, nsamples_per_batch,
+                                  random_state=randomness).transpose()
+        for sample_i in PoverT4_GP:
+            if bLogFlag:
+                P_GP = np.exp(sample_i)*(T_plot**4)       # convert to P
+            else:
+                P_GP = sample_i*(T_plot**4)       # convert to P
+            if is_a_physical_eos(T_plot, P_GP):
                 EOS_set.append(P_GP)
                 iSuccess += 1
                 if iSuccess == number_of_EoS:
@@ -125,7 +135,7 @@ def main():
     plt.scatter(validation_data[:, 0], validation_data[:, 1],
                 marker='+', color='b', s=20, label="validation data")
     for i in range(number_of_EoS):
-        plt.plot(T_GP, EOS_set[i]/T_GP**4, '-')
+        plt.plot(T_plot, EOS_set[i]/T_plot**4, '-')
 
     plt.legend()
     plt.xlim([0, 0.5])
@@ -137,8 +147,8 @@ def main():
     # plot e vs T
     plt.figure()
     for i in range(number_of_EoS):
-        e = compute_energy_density(T_GP, EOS_set[i])
-        plt.plot(T_GP, e/T_GP**4, '-')
+        e = compute_energy_density(T_plot, EOS_set[i])
+        plt.plot(T_plot, e/T_plot**4, '-')
 
     plt.xlim([0, 0.5])
     plt.ylim([0, 15])
@@ -149,8 +159,8 @@ def main():
     # plot cs^2 vs T
     plt.figure()
     for i in range(number_of_EoS):
-        cs2 = compute_speed_of_sound_square(T_GP, EOS_set[i])
-        plt.plot(T_GP[2:-2], cs2[2:-2], '-')
+        cs2 = compute_speed_of_sound_square(T_plot, EOS_set[i])
+        plt.plot(T_plot[2:-2], cs2[2:-2], '-')
 
     plt.xlim([0, 0.5])
     plt.ylim([0, 1.0])
@@ -160,4 +170,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    ranSeed = 23
+    number_of_EoS = 1000
+    bLogFlag = True
+    main(ranSeed, number_of_EoS, bLogFlag)
