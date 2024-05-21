@@ -20,16 +20,13 @@ def main():
     # pick the EoS with the given index
     if index in EoS_dict:
         data = EoS_dict[index]
-        e = data[:, 0]
-        P = data[:, 1]
-        T = data[:, 2]
     else:
         print(f"Index {index} not found in file {filename}")
         sys.exit(1)
 
     # write the EoS to a new binary file with columns e, P, T
     with open(f"EoS_{index}.bin", 'wb') as f:
-        pickle.dump(data, f)
+        f.write(data.tobytes())
 
 if __name__ == "__main__":
     main()
