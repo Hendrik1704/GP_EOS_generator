@@ -16,10 +16,10 @@ slope=0 #this is the slope for the 1st derivitive, and is also the restiction fo
 
 randomness=np.random.seed(2)
 number_of_successful_trials=2 #this is the number of successfully-filtered graphs we want to create in the while loop
-linspace_simulated_points=2000 #the fewer the points, the faster the computer runs the trials
+linspace_simulated_points=1000 #the fewer the points, the faster the computer runs the trials
 i=0 #used in the while loop and is equal to the number of successful trials of the samples (number_of_successful_trials)
 f=0 #used in the while loop and counts the total number of attempts the while loop repeats
-k=0 #used to find the total number of trials needed to achieve the one condition of speed of sound filter
+
 
 kernel =RBF(length_scale=0.0001518)#+WhiteKernel(noise_level=noise)
 gpr = GaussianProcessRegressor(kernel=kernel, alpha=1e-2)
@@ -37,11 +37,8 @@ working_simulated_1_derivitive=[] # the number of working points from the total 
 working_simulated_2_derivitive=[]
 working_simulated_sound=[] #this is the total number of points that work after the speed of sound filter
 
-working_computed_speed_sound=[]
 
-only_sound_filter_xvalues=[]
-only_sound_filter_sound_y_values=[]
-working_trial_number_sound=[]
+working_computed_speed_sound=[]
 
 
 number_iterations_while=[] # a list of 1 to f, where f is defined as the total number of times the while loop has run for a trial to work
@@ -112,22 +109,7 @@ def compute_speed_of_sound_square (T,P):
     dPdE = np.gradient(P, e) #here, dPdE will equal the speed of sound squared, as listed in the overleaf document
 
     c_squared=dPdE #both of these are lists of values
-    return(c_squared)
-
-
-
-pressure_original_data=x_data.flatten()**4*y_data
-sound_squared_orginial_dataset=compute_speed_of_sound_square(x_data,pressure_original_data)
-pressure_test_data=x_test.flatten()**4*y_test
-sound_squared_test_dataset=compute_speed_of_sound_square(x_test,pressure_test_data)
-
-
-
-
-
-
-
-
+    working_computed_speed_sound.append(c_squared)
 
 
 
@@ -146,7 +128,6 @@ while i in range (0,number_of_successful_trials):
     print(boolean_1_derivitive,boolean_2_derivitive,boolean_speedsound)
 
     if boolean_1_derivitive==True and boolean_2_derivitive==True and boolean_speedsound==True:
-
         x_working_set.append(x_simulate.flatten())
         y_working_set.append(y_simulate)
         print(f"\n\n\n\nWorking Pairs Set {i+1}:\n\n", end='\n')
@@ -159,27 +140,15 @@ while i in range (0,number_of_successful_trials):
 
         min_simulated_pressure.append(min_sim)
         max_simulated_pressure.append(max_sim)
-        working_trial_number.append(f + 1)
+        working_trial_number.append(f+1)
+
+        compute_speed_of_sound_square(x_simulate.flatten(),y_simulate)
+
 
         i=i+1
 
-    elif (boolean_1_derivitive==True and boolean_2_derivitive==False and boolean_speedsound==True) or (boolean_1_derivitive==False and boolean_2_derivitive==False and boolean_speedsound==True) or (boolean_1_derivitive==False and boolean_2_derivitive==True and boolean_speedsound==True):
-        c_squared_for_only_sound_filter = compute_speed_of_sound_square(x_simulate.flatten(), y_simulate)  # this variable is a list
-
-        only_sound_filter_xvalues.append(x_simulate.flatten())
-        only_sound_filter_sound_y_values.append(c_squared_for_only_sound_filter) #c_squared_for_only_sound_filter is local only to this elif loop for clarity of operations
-        working_trial_number_sound.append(k + 1)
-
-        c_squared_for_this_case=compute_speed_of_sound_square(x_simulate.flatten(),y_simulate)
-        working_computed_speed_sound.append(c_squared_for_this_case)
-
-        print("An exclusive sound case has occured")
-        k=k+1
-
     elif boolean_1_derivitive==False:
         i=i
-
-
     number_iterations_while.append(f + 1)
 
     f=f+1
@@ -235,8 +204,6 @@ for tick in working_trial_number:
 plt.legend(title="Legend", loc='upper left', fontsize='x-small')
 plt.show()
 
-print(f"Cases where sound works but one of other filters do not work:{len(only_sound_filter_xvalues)}")
-
 
 for i in range (len(x_working_set)):
     plt.figure(figsize=(10, 5))
@@ -249,29 +216,18 @@ for i in range (len(x_working_set)):
     plt.scatter(x_data,y_data, marker='x', color='r', s=10, label=f"Number Original Data Points: {len(x_data)}")
     plt.errorbar(x_data, y_data, yerr=noise * y_data, fmt='none', alpha=0.5, color='blue', label=f'{noise * 100}% Error')
     plt.scatter(x_test,y_test,marker='x', color='orange', s=10, label=f"Number Test Data Points: {len(x_test)}")
-    plt.plot(x_i.flatten(),y_i/(x_i.flatten()**4), 'k', lw=1, ls='-', label=f'Filtered Curve {i+1}, ALL of Filters: dy/dx > {slope}, d^2y/dx^2 > 2nd derivitive, sound squared restraint')
+    plt.plot(x_i.flatten(),y_i/(x_i.flatten()**4), 'k', lw=1, ls='-', label=f'Filtered Curve {i+1}, Filter: dy/dx > {slope}, d^2y/dx^2 > 2nd derivitive, sound squared restraint')
     plt.title(f'Filtered Curve {i+1}')
     plt.xlabel("x--[Temperature (GEV)]")
     plt.ylabel("y--[P$T^{-4}$]")
     plt.legend(title="Legend", loc='lower right', fontsize='x-small')
     plt.show()
     # x_working_set[i] will be a array, as we put arrays of numbers into a list in x_working_set
+    plt.plot(x_i.flatten(), working_computed_speed_sound[i], 'k', lw=1, ls='-',label=f'Working Speed')
 
-
-for i in range (len(only_sound_filter_xvalues)):
-    plt.figure(figsize=(10, 5))
-    x_i = x_working_set[i].reshape(-1, 1)
-    y_i = y_working_set[i]
-
-    plt.plot(x_i.flatten(), y_i, 'k', lw=1, ls='-',label=f'Working Speed Graph {i+1}, Trial number: {working_trial_number_sound[i]}')
-
-    plt.title(f'Speed of Sound Curve for ALL Working Sound filters {i + 1}')
+    plt.title(f'Speed of Sound Curve {i + 1}')
     plt.xlabel("x--[Temperature (GEV)]")
     plt.ylabel("y--[Speed of Sound Squared]")
     plt.legend(title="Legend", loc='lower right', fontsize='x-small')
 
-    plt.scatter(x_data, pressure_original_data, marker='x', color='r', s=10, label="Original Dataset Sound Squared")
-    plt.scatter(x_test, pressure_test_data, marker='x', color='o', s=10, label="Test Dataset Sound Squared")
-
     plt.show()
-
