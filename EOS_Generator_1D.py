@@ -2,7 +2,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 import numpy as np
 import matplotlib.pyplot as plt
-
+#
 def derivitive_1_filter(x, y, slope):
     dydx = np.gradient(y, x)
     indices = dydx > slope
