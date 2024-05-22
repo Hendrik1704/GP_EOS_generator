@@ -45,10 +45,14 @@ def derivative_filter(x, y) -> bool:
         return False
 
 def speed_sound_squared_filter(T, P) -> bool:
-    """This filter ensures the speed of sound square is between 0 and 1"""
+    """
+    	This filter ensures the speed of sound square is between 0 and 0.5.
+    	The upper bound is chosen such that the causality constraints in
+    	the hydrodynamical simulations are satisfied.
+    """
     cs2 = compute_speed_of_sound_square(T, P)
     cs2 = cs2[2:-2]
-    index = (cs2 > 0.) & (cs2 < 1.)
+    index = (cs2 > 0.) & (cs2 < 0.5)
     physical_points = cs2[index]
 
     if len(cs2) == len(physical_points):
@@ -232,7 +236,7 @@ def main(ranSeed: int, number_of_EoS: int, min_T_mask_region: float,
         plt.plot(T_plot, cs2, '-')
 
     plt.xlim([0, 1.])
-    plt.ylim([0, 1.0])
+    plt.ylim([0, 0.6])
     plt.xlabel(r"T (GeV)")
     plt.ylabel(r"$c_s^2$")
     plt.show()
