@@ -51,7 +51,6 @@ def speed_sound_squared_filter(T, P) -> bool:
     	the hydrodynamical simulations are satisfied.
     """
     cs2 = compute_speed_of_sound_square(T, P)
-    cs2 = cs2[2:-2]
     index = (cs2 > 0.) & (cs2 < 0.5)
     physical_points = cs2[index]
 
