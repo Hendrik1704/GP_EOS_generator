@@ -120,18 +120,22 @@ def invert_EoS_tables(T, P):
         This function inverts the EoS table to get e(T), it also computes the
         pressure P(T)
     """
-    e = compute_energy_density(T, P)
-    f_e = interpolate.interp1d(T, e, kind='cubic')
-    f_p = interpolate.interp1d(T, P, kind='cubic')
+    e = compute_energy_density(T.flatten(), P)
+    f_e = interpolate.interp1d(T.flatten(), e, kind='cubic')
+    f_p = interpolate.interp1d(T.flatten(), P, kind='cubic')
 
     e_bounds = [np.min(e), np.max(e)]
     e_list = np.linspace(e_bounds[0] ** 0.25, e_bounds[1] ** 0.25, 200) ** 4
 
     T_from_e = []
     for e_local in e_list:
-        T_local = binary_search_1d(e_local, f_e, T[0], T[-1])
+        T_local = binary_search_1d(e_local, f_e, T[0].flatten(), T[-1].flatten())
         T_from_e.append(T_local)
     T_from_e = np.array(T_from_e)
+    print(e_list ** 0.25)
+    print(f_p(T_from_e))
+    print(T_from_e)
+
     return (e_list ** 0.25, f_p(T_from_e), T_from_e)
 
 
@@ -181,7 +185,9 @@ def main(ranSeed: int, number_of_EoS: int, min_T_mask_region: float,
         x_train = np.log(training_data[:, 0]).reshape(-1, 1)
         gpr.fit(x_train, np.log(training_data[:, 1]))
         print(f"GP score: {gpr.score(x_train, np.log(training_data[:, 1]))}")
-        T_GP = np.linspace(np.log(T_min), np.log(T_max), 1000).reshape(-1, 1)
+        T_GP = np.linspace(np.log(T_min), np.log(T_max), 1000).reshape(-1, 1)  #by reshaping, we take the last array of the linspace function thus only one set of T_GP
+
+       # print(T_GP)
         T_plot = np.exp(T_GP.flatten())
     else:
         x_train = training_data[:, 0].reshape(-1, 1)
@@ -198,16 +204,21 @@ def main(ranSeed: int, number_of_EoS: int, min_T_mask_region: float,
     while iSuccess < number_of_EoS:
         PoverT4_GP = gpr.sample_y(T_GP, nsamples_per_batch,
                                   random_state=randomness).transpose()
+
         for sample_i in PoverT4_GP:
             if bLogFlag:
                 P_GP = np.exp(sample_i) * (T_plot ** 4)  # convert to P
+
             else:
                 P_GP = sample_i * (T_plot ** 4)  # convert to P
+
+            #print(f"trail {}")
             if is_a_physical_eos(T_plot, P_GP):
                 EOS_set.append(P_GP)
                 iSuccess += 1
                 if iSuccess == number_of_EoS:
                     break
+
         iter += nsamples_per_batch
         print(f"Sample success rate: {float(iSuccess) / iter:.3f}")
 
@@ -259,6 +270,9 @@ def main(ranSeed: int, number_of_EoS: int, min_T_mask_region: float,
         if (i + 1) % 100 == 0:
             print(f"Inverting EoS table {i + 1}/{number_of_EoS}")
         e_list, P_list, T_list = invert_EoS_tables(T_plot, EOS_set[i])
+
+
+
         e_list_EoS.extend([e_list])
         P_list_EoS.extend([P_list])
         T_list_EoS.extend([T_list])
@@ -271,6 +285,6 @@ if __name__ == "__main__":
     ranSeed = 23
     number_of_EoS = 1000
     bLogFlag = True
-    min_T_mask_region = 0.13
-    max_T_mask_region = 0.7
+    min_T_mask_region = 0.1
+    max_T_mask_region = 0.4
     main(ranSeed, number_of_EoS, min_T_mask_region, max_T_mask_region, bLogFlag)
