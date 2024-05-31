@@ -36,8 +36,12 @@ def main(databaseFile: str, args: list[int]) -> None:
 
         plt.plot(eos[:, 2], cs2, label=indexKey)
 
-    plt.legend()
+    plt.legend(loc=4, ncol=4)
     plt.xlim([0.05, 0.5])
+    plt.ylim([0, 0.5])
+    plt.xlabel(r"$T$ (GeV)")
+    plt.ylabel(r"$c_s^2$")
+    plt.tight_layout()
     plt.savefig("checkEOS_cs2.pdf")
     plt.show()
 
@@ -48,6 +52,12 @@ if __name__ == "__main__":
         sys.exit(1)
     else:
         databaseFile = str(sys.argv[1])
-        args = [int(i) for i in sys.argv[2:]]
+        args = []
+        for arg in sys.argv[2:]:
+            if "-" in arg:
+                l, h = arg.split("-")
+                args += range(int(l), int(h))
+            else:
+                args += [int(arg)]
 
     main(databaseFile, args)
