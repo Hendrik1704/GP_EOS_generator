@@ -128,9 +128,9 @@ def binary_search_1d(y_randomly_generated, f_model, x_min, x_max,rel_abs_multipl
         abs_error=abs(y_randomly_generated-y_model_avg)
 
         #we take the model error appproximately from the average y value
-        error_interpolation=abs(f_model(y_model_avg)-y_model_avg) #we cannot interppolate a value that is NOT in the range of interpolation
-        rel_error=abs_error/abs(abs_error+error_interpolation+y_randomly_generated) #error_interpolation can NOT be used later in the code, as the input is beyond the maximum allowed.
-
+        #error_interpolation=abs(f_model(y_model_avg)-y_model_avg) #we cannot interppolate a value that is NOT in the range of interpolation
+        rel_error=abs_error/abs(abs_error+1e-15+y_randomly_generated) #error_interpolation can NOT be used later in the code, as the input is beyond the maximum allowed.
+#so that novalues go to infinity
 
         while (iteration<maxiter and rel_error>accuracy and abs_error>accuracy*rel_abs_multiplyfactor):
             #we set NEW values for x_max and x_min (changing the bounds) until we have the value narrowed down to a smalle enough interval for approximation (take average of final interval)
@@ -265,7 +265,7 @@ def main(ranSeed, slope,linspace_simulated_points,number_of_successful_trials,sl
         x_train = np.log(train_masked_x[:, 0]).reshape(-1, 1)
         gpr.fit(x_train, np.log(train_masked_x[:, 1]))
         print(f"GP inputs score: {gpr.score(x_train, np.log(train_masked_x[:, 1]))}")
-        T_GP = np.linspace(np.log(T_Min), np.log(T_Max), 1000).reshape(-1, 1)
+        T_GP = np.linspace(np.log(T_Min), np.log(T_Max), linspace_simulated_points).reshape(-1, 1)
         T_GP=T_GP[sliced_amount: -sliced_amount]
         T_plot = np.exp(T_GP.flatten())
 
@@ -274,7 +274,7 @@ def main(ranSeed, slope,linspace_simulated_points,number_of_successful_trials,sl
         x_train = train_masked_x[:, 0].reshape(-1, 1)
         gpr.fit(x_train, train_masked_x[:, 1]) #x_train is needed to just train the gpr model
         print(f"GP inputs score: {gpr.score(x_train, train_masked_x[:, 1])}")
-        T_GP = np.linspace(T_Min, T_Max, 1000).reshape(-1, 1)
+        T_GP = np.linspace(T_Min, T_Max, linspace_simulated_points).reshape(-1, 1)
         T_GP = T_GP[sliced_amount: -sliced_amount]
         T_plot = T_GP.flatten()
 
@@ -314,7 +314,7 @@ def main(ranSeed, slope,linspace_simulated_points,number_of_successful_trials,sl
     #T_GP ARE the simulated x points
     while i < number_of_successful_trials:
 #this is because we draw from a data set with p/t^4
-        P_divide_Tto4 = gpr.sample_y(T_GP, linspace_simulated_points, random_state=randomness).transpose() #this is randomly---we produce 1000 samples that are each 996 in array size after we slice
+        P_divide_Tto4 = gpr.sample_y(T_GP, batch_size, random_state=randomness).transpose() #this is randomly---we produce 1000 samples that are each 996 in array size after we slice
 # ----the sample_y expects 2D array with x values and a fitted y value (through the GPR) so that we create MULTIPLE SAMPLES of possible y values to use
 
 #notice that because we neither flattern nor reshape t_gp, the linspace function can now do what its made for: creating arrays inside a numpy array.
@@ -526,7 +526,7 @@ if __name__ == "__main__":
     slope=0
     linspace_simulated_points = 1000
     number_of_successful_trials = 1000
-    sliced_amount=2 #this will also slice the number of linspace_generated points to match the shapes of all the appended lists.
+    sliced_amount=0 #this will also slice the number of linspace_generated points to match the shapes of all the appended lists.
     blogflag=True #tests if we want smaller intervals by scaling down to a log size to project data through linspace function
     min_mask_x_values=0.20 #these values will detmerain how restricted the curve is at certain x values----how much variation we want in this interval-- also determains the GP score along with the effectiveness of the for loop in training.
     max_mask_x_values=0.25
