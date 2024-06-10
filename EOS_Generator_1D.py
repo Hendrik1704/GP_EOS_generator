@@ -138,7 +138,8 @@ def EoS_file_writer(e, P, T, filename):
         pickle.dump(EoS_dict, f)
 
 def main(ranSeed: int, number_of_EoS: int, min_T_mask_region: float, 
-         max_T_mask_region: float, bLogFlag: bool) -> None:
+         max_T_mask_region: float, bLogFlag: bool, use_anchor_point: bool,
+         anchor_point: tuple) -> None:
     # load the full EOS table for verification
     validation_data = np.loadtxt("EoS_hotQCD.dat")
     
@@ -148,11 +149,17 @@ def main(ranSeed: int, number_of_EoS: int, min_T_mask_region: float,
                 (validation_data[:, 0] > max_T_mask_region))
     training_data = validation_data[mask]
 
+    # add an anchor point to the training data
+    if use_anchor_point:
+        training_data = np.vstack((training_data, anchor_point))
+        print(f"Anchor point added: {anchor_point}")
+        print(training_data.shape)
+
     # print out the minimum and maximum values of the training data x_values
     T_min = np.min(training_data[:, 0])  # the min of actual data points
     T_max = np.max(training_data[:, 0])  # the max of actual data points
-    #print(f"Minimum of the datapoints is: {T_min}")
-    #print(f"Maximum of the datapoints is: {T_max}")
+    print(f"Minimum of the datapoints is: {T_min}")
+    print(f"Maximum of the datapoints is: {T_max}")
 
     # set the random seed
     if ranSeed >= 0:
@@ -240,6 +247,17 @@ def main(ranSeed: int, number_of_EoS: int, min_T_mask_region: float,
     plt.ylabel(r"$c_s^2$")
     plt.show()
 
+    # create file with EoS table for one EoS with evenly spaced T values
+    write_EOS_table_for_plot = False
+    if write_EOS_table_for_plot:
+        EoS_chosen = 0
+        # write T, P/T^4, e/T^4, s/T^3, cs^2 to a file
+        data = np.column_stack((T_plot, EOS_set[EoS_chosen]/T_plot**4,
+                compute_energy_density(T_plot, EOS_set[EoS_chosen])/T_plot**4,
+                compute_entropy_density(T_plot, EOS_set[EoS_chosen])/T_plot**3,
+                compute_speed_of_sound_square(T_plot, EOS_set[EoS_chosen])))
+        np.savetxt(f"EoS{EoS_chosen}.dat", data)
+
     # invert the EoS tables
     e_list_EoS = []
     P_list_EoS = []
@@ -262,4 +280,7 @@ if __name__ == "__main__":
     bLogFlag = True
     min_T_mask_region = 0.13
     max_T_mask_region = 0.7
-    main(ranSeed, number_of_EoS, min_T_mask_region, max_T_mask_region, bLogFlag)
+    use_anchor_point = False
+    anchor_point = (0.22, 3.) # anchor point for the GP (T, P/T^4)
+    main(ranSeed, number_of_EoS, min_T_mask_region, max_T_mask_region, 
+         bLogFlag, use_anchor_point, anchor_point)
