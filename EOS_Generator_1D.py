@@ -1,533 +1,286 @@
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, WhiteKernel
+from sklearn.gaussian_process.kernels import RBF
 import numpy as np
 import matplotlib.pyplot as plt
-
 from scipy import interpolate
 import pickle
 
-#this compute_derivitive does the same thing as the gradient function
+ACCURACY = 1e-6
+MAXITER  = 100
+
 def compute_derivative(x, y):
     """This function compute dy/dx using finite difference"""
-    slope=np.gradient(y, x, edge_order=2)
-    return slope
+    return np.gradient(y, x, edge_order=2)
 
 def compute_energy_density(T, P):
     """This function computes energy density"""
     dPdT = compute_derivative(T, P)
-    e = T * dPdT - P  # energy density
+    e = T * dPdT - P    # energy density
     return e
 
-def compute_speed_of_sound_square (T,P):
+def compute_entropy_density(T, P):
+    """This function computes entropy density"""
     dPdT = compute_derivative(T, P)
-    e = T * dPdT - P
-    c_squared = np.gradient(P, e)
-    return c_squared
+    s = dPdT    # entropy density
+    return s
 
-def compute_value_of_et4 (T,P):
+def compute_speed_of_sound_square(T, P):
+    """This function computes the speed of sound square"""
     e = compute_energy_density(T, P)
-    desired_y_value=e/(T**4)
-    return desired_y_value
+    dPde = compute_derivative(e, P)
+    return dPde
 
-def derivative_filter(x, y,slope):
+def derivative_filter(x, y) -> bool:
     """
         This filter check whether the derivative is larger than 0
         for all array elements
     """
     dydx = compute_derivative(x, y)
-    indices = dydx > slope
-    after_derivitive_filter = dydx[indices]
+    indices = dydx < 0.
+    negative_derivatives = x[indices]
 
-    #print(f"ooooooooooooooooooo{negative_derivatives}")
-    if len(after_derivitive_filter) == len(x):
+    if len(negative_derivatives) == 0:
         return True
     else:
         return False
 
-def derivitive_1_append_list(x, y, slope,list):
-    dydx = compute_derivative(x, y)
-    indices = dydx > slope
-    after_derivitive_filter = dydx[indices]
-    print(f"Required Derivitive 1:{len(x)}")
-    print(f"Achieved Value: {len(after_derivitive_filter)}")
-    list.append(len(after_derivitive_filter))
+def speed_sound_squared_filter(T, P) -> bool:
+    """
+    	This filter ensures the speed of sound square is between 0 and 0.5.
+    	The upper bound is chosen such that the causality constraints in
+    	the hydrodynamical simulations are satisfied.
+    """
+    cs2 = compute_speed_of_sound_square(T, P)
+    index = (cs2 > 0.) & (cs2 < 0.5)
+    physical_points = cs2[index]
 
-def derivitive_2_filter(x, y, slope):
-    dydx = compute_derivative(x, y)
-    dy2dx = compute_derivative(x, dydx)
-    indices = dy2dx > slope
-    after_derivitive_filter = dy2dx[indices]
-
-    if len(after_derivitive_filter) == len(x):
+    if len(cs2) == len(physical_points):
         return True
     else:
         return False
 
-def derivitive_2_append_list(x, y, slope,list):
-    dydx = compute_derivative(x, y)
-    dy2dx = compute_derivative(x, dydx)
-    indices = dy2dx > slope
-    after_derivitive_filter = dy2dx[indices]
-    print(f"Required Derivitive 2:{len(x)}")
-    print(f"Achieved Value: {len(after_derivitive_filter)}")
-    list.append(len(after_derivitive_filter))
+def is_a_physical_eos(T, P) -> bool:
+    """
+        This calls the different physics filters to check if the 
+        EoS is a physical one
+    """
+    if not derivative_filter(T, P):
+        return False
 
-def speed_sound_squared_filter(T, P):
     dPdT = compute_derivative(T, P)
-    e = T * dPdT - P
-    dPdE = compute_derivative(e, P)
-    index = (0 < dPdE) & (dPdE < 1) #we must use <1 for the values in the endpoints
-    after_sound_filter = dPdE[index]
-
-    if len(dPdE) == len(after_sound_filter):
-        return True
-    else:
+    if not derivative_filter(T, dPdT):
         return False
 
-def speed_sound_squared_append_list(T,P,list):
-    dPdT =compute_derivative(T, P)
-    e = T * dPdT - P
-    dPdE = compute_derivative(e, P)
-    index = (0 < dPdE) & (dPdE < 1)
-    after_sound_filter = dPdE[index]
-    print(f"Required Sound Filter (numerical):{len(dPdE)}")
-    print(f"Achieved Value: {len(after_sound_filter)}\n")
-    list.append(len(after_sound_filter))
+    if not speed_sound_squared_filter(T, P):
+        return False
 
-def masking_func(min_bound,max_bound,data): #the point of the mask is so that the
-    mask = ((data[:, 0] < min_bound) | (data[:, 0] > max_bound))
-    new_masked_x = data[mask]  # this is the CHANGED training values after manipulating under 'main'
-    return new_masked_x
+    return True
 
-#-----------------------------------------------------------------------------------------------
-accuracy = 1e-6
-maxiter = 100
-
-def binary_search_1d(y_randomly_generated, f_model, x_min, x_max,rel_abs_multiplyfactor):
+def binary_search_1d(y_local, f_y, x_min, x_max):
     """
         This function performs a binary search to find the x value
         that corresponds to the y value y_local
     """
     iteration = 0
-    y_low_bound = f_model(x_min)
-    y_up_bound=f_model(x_max) #---------these values are the min and max after interpolating (assuming the function was already appplied
-
-    #now we have conditionals on Y_local
-    if y_randomly_generated<y_low_bound: #if the randomly_generated point is BELOW the interpolated value, we prioritize the interpolated value as the actial value-
-        # ---OUR actual x_min, x_max data values (and also after interppolate) are set in stone and will not change by a newly generated set of values
-
-        return x_min,iteration
-    elif y_randomly_generated>y_up_bound:
-        return x_max,iteration
-
-    else: #(if the generated value is between the accepted data extreme values)----in our case, directly euqal to eachother
-
-        #set values here, we can change later in the while loop
-        x_avg = (x_min + x_max) / 2
-        y_model_avg=f_model(x_avg)
-        abs_error=abs(y_randomly_generated-y_model_avg)
-
-        #we take the model error appproximately from the average y value
-        #error_interpolation=abs(f_model(y_model_avg)-y_model_avg) #we cannot interppolate a value that is NOT in the range of interpolation
-        rel_error=abs_error/abs(abs_error+1e-15+y_randomly_generated) #error_interpolation can NOT be used later in the code, as the input is beyond the maximum allowed.
-#so that novalues go to infinity
-
-        while (iteration<maxiter and rel_error>accuracy and abs_error>accuracy*rel_abs_multiplyfactor):
-            #we set NEW values for x_max and x_min (changing the bounds) until we have the value narrowed down to a smalle enough interval for approximation (take average of final interval)
-
-
-            if y_randomly_generated < y_low_bound:  # if the randomly_generated point is BELOW the interpolated value, we prioritize the interpolated value as the actial value-
-                # ---OUR actual x_min, x_max data values (and also after interppolate) are set in stone and will not change by a newly generated set of values
-                x_max=x_avg
+    y_low = f_y(x_min)
+    y_up = f_y(x_max)
+    if y_local < y_low:
+        return x_min
+    elif y_local > y_up:
+        return x_max
+    else:
+        x_mid = (x_max + x_min) / 2.
+        y_mid = f_y(x_mid)
+        abs_err = abs(y_mid - y_local)
+        rel_err = abs_err / abs(y_mid + y_local + 1e-15)
+        while (rel_err > ACCURACY and abs_err > ACCURACY*1e-2 
+               and iteration < MAXITER):
+            if y_local < y_mid:
+                x_max = x_mid
             else:
+                x_min = x_mid
+            x_mid = (x_max + x_min) / 2.
+            y_mid = f_y(x_mid)
+            abs_err = abs(y_mid - y_local)
+            rel_err = abs_err / abs(y_mid + y_local + 1e-15)
+            iteration += 1
+        return x_mid
 
-                x_min=x_avg #only of these will occur during each loop--the x_max before will always be greater than x_min after loop and vise versa-- narrowing the range
-
-            x_avg = (x_min + x_max) / 2
-            y_model_avg = f_model(x_avg)
-
-            abs_error = abs(y_randomly_generated - y_model_avg)
-
-            min_int=int(x_min)
-            max_int=int(x_max)
-
-            if x_avg in range(min_int,max_int):  #correct for a average value that is too large
-                error_model = abs(f_model(y_model_avg) - y_model_avg)
-            else:
-                error_model = 1e-15
-
-
-
-            rel_error = abs_error / (abs_error + error_model + y_randomly_generated)
-            iteration+=1
-
-        return (x_avg, iteration)
-
-
-
-def invert_EoS_tables(T, P): #notice that we use P, so we must scale down by factor 1/4 power so that our return e value is usable .
+def invert_EoS_tables(T, P):
     """
         This function inverts the EoS table to get e(T), it also computes the
         pressure P(T)
     """
     e = compute_energy_density(T, P)
-    f_e = interpolate.interp1d(T, e, kind='cubic') #by interpolating, we create PREDICTED y values based on the FIXED DATA VALUS THAT WE ALREADY KNOW----it create a function that can predict an infinite number of x values and give a Y_value
+    f_e = interpolate.interp1d(T, e, kind='cubic')
     f_p = interpolate.interp1d(T, P, kind='cubic')
 
     e_bounds = [np.min(e), np.max(e)]
-
-    e_list = np.linspace(e_bounds[0] ** 0.25, e_bounds[1] ** 0.25, 200) ** 4 #here, we schaled dhown by power 1/4 then back up to ensure the values are well seperated/more uniform in our linspace-[0] is the minimum value while [1] is the maximum
-#create random values of e, then find the interpolated value that will work BEST given the error contraints
+    e_list = np.linspace(e_bounds[0]**0.25, e_bounds[1]**0.25, 200)**4
 
     T_from_e = []
-    iteration_each_loop=[]
     for e_local in e_list:
-
-        T_fit_interpolate, iteration_one_loop = binary_search_1d(e_local, f_e, T[0].flatten(), T[-1].flatten(),1e-2) # we are using the MIN and MAX t values here, along with the values of the RANDOMLY GENERATED e_list values, which we then will narrow down to
-        T_from_e.append(T_fit_interpolate)
-        iteration_each_loop.append(iteration_one_loop)
-
+        T_local = binary_search_1d(e_local, f_e, T[0], T[-1])
+        T_from_e.append(T_local)
     T_from_e = np.array(T_from_e)
-
-
-    return (e_list ** 0.25, f_p(T_from_e), T_from_e,iteration_each_loop) #here, we get a value of T from the interpolation of e into a model given the values of T and p. We then predict a value of T from random values of e. These values are then used to predict P values
-
-
+    return (e_list**0.25, f_p(T_from_e), T_from_e)
 
 def EoS_file_writer(e, P, T, filename):
     """
-        This function writes the EoS to a pickle file with a dictionary
+        This function writes the EoS to a pickle file with a dictionary 
         for each EoS. The different columns are: e, P, T
     """
     EoS_dict = {}
     for EoS in range(len(e)):
-        data = np.column_stack((e[EoS], P[EoS], T[EoS]))  #each time this iterates, we will create NEW data--- as e,p,t should be LISTS OF ARRAYS. This means that the eos_dict function will assign a value
-        # (EOS---the tot. number of arrays in the list) to the stacked data. This acts as a 'key' to the dictionary. The first data set could be accessed using EOS_dict[1]
-        EoS_dict[f'{EoS:04}'] = data #we assign the stacked data as an element in the EOS_dict
-    #print(f"000000000000000000000000000{EoS_dict{'1'}}")
-    with open(filename, 'wb') as f: #we want to write the data into the pickle file for later use----here, f is just the placeholder for the name
+        data = np.column_stack((e[EoS], P[EoS], T[EoS]))
+        EoS_dict[f'{EoS:04}'] = data
+    with open(filename, 'wb') as f:
         pickle.dump(EoS_dict, f)
-#-----------------------------------------------------------------------------------------------
 
+def main(ranSeed: int, number_of_EoS: int, min_T_mask_region: float, 
+         max_T_mask_region: float, bLogFlag: bool, use_anchor_point: bool,
+         anchor_point: tuple) -> None:
+    # load the full EOS table for verification
+    validation_data = np.loadtxt("EoS_hotQCD.dat")
+    
+    # mask for the training data and exclude the region where the T 
+    # (first column) is between min_T_mask_region and max_T_mask_region
+    mask = ((validation_data[:, 0] < min_T_mask_region) | 
+                (validation_data[:, 0] > max_T_mask_region))
+    training_data = validation_data[mask]
 
-def combine_all_filters(T, P,slope) -> bool:
-    """
-        This calls the different physics filters to check if the
-        EoS is a physical one
-    """
-    if derivative_filter(T, P,slope)==False:
-        return False
+    # add an anchor point to the training data
+    if use_anchor_point:
+        training_data = np.vstack((training_data, anchor_point))
+        print(f"Anchor point added: {anchor_point}")
+        print(training_data.shape)
 
-    if derivitive_2_filter(T, P,slope)==False:
-        return False
+    # print out the minimum and maximum values of the training data x_values
+    T_min = np.min(training_data[:, 0])  # the min of actual data points
+    T_max = np.max(training_data[:, 0])  # the max of actual data points
+    print(f"Minimum of the datapoints is: {T_min}")
+    print(f"Maximum of the datapoints is: {T_max}")
 
-    if speed_sound_squared_filter(T, P)==False:
-        return False
-
-    return True
-
-
-
-
-def main(ranSeed, slope,linspace_simulated_points,number_of_successful_trials,sliced_amount,min_mask_x_values, max_mask_x_values, blogflag):
-    data=np.loadtxt("EoS_hotQCD.dat") #here, we set the x_train to a fixed variable. We use T_plot as the variable that can be bound to change. we will also use that as the plotting variable.
-    #y_data=data[:,1]
-
-    data_test=np.loadtxt("EoS_hotQCD_full.dat")
-    #y_test=data_test[:,1]
-
-
-
-#this issue is we need to take the x values that WORK and then have a set of y values that correpsond to those.
-    train_masked_x=masking_func(min_mask_x_values,max_mask_x_values,data)
-    test_masked_x=masking_func(min_mask_x_values,max_mask_x_values,data_test)
-
-
-#we create the corresponding values for new_masked_x's y values
-    #print(f"{train_masked_x}000000000000000000000000000000000000")
-
-
-    T_Min=np.min(train_masked_x[:,0])
-    T_Max=np.max(train_masked_x[:,0])
-
-
-    # set the random seed, check for incorrect negative seeds
+    # set the random seed
     if ranSeed >= 0:
         randomness = np.random.seed(ranSeed)
     else:
         randomness = np.random.seed()
 
-
+    # define GP kernel
     kernel = RBF(length_scale=0.2, length_scale_bounds=(1e-3, 100))
     gpr = GaussianProcessRegressor(kernel=kernel, alpha=1e-4)
 
-    if blogflag: #define the x_train variable and establish the t_plot, which is what we wil use as desires x values
-        x_train = np.log(train_masked_x[:, 0]).reshape(-1, 1)
-        gpr.fit(x_train, np.log(train_masked_x[:, 1]))
-        print(f"GP inputs score: {gpr.score(x_train, np.log(train_masked_x[:, 1]))}")
-        T_GP = np.linspace(np.log(T_Min), np.log(T_Max), linspace_simulated_points).reshape(-1, 1)
-        T_GP=T_GP[sliced_amount: -sliced_amount]
+    if bLogFlag:
+        # train GP with log(T) vs. log(P/T^4) because all the quantities
+        # are positive
+        x_train = np.log(training_data[:, 0]).reshape(-1, 1)
+        gpr.fit(x_train, np.log(training_data[:, 1]))
+        print(f"GP score: {gpr.score(x_train, np.log(training_data[:, 1]))}")
+        T_GP = np.linspace(np.log(T_min), np.log(T_max), 1000).reshape(-1, 1)
         T_plot = np.exp(T_GP.flatten())
-
-
     else:
-        x_train = train_masked_x[:, 0].reshape(-1, 1)
-        gpr.fit(x_train, train_masked_x[:, 1]) #x_train is needed to just train the gpr model
-        print(f"GP inputs score: {gpr.score(x_train, train_masked_x[:, 1])}")
-        T_GP = np.linspace(T_Min, T_Max, linspace_simulated_points).reshape(-1, 1)
-        T_GP = T_GP[sliced_amount: -sliced_amount]
+        x_train = training_data[:, 0].reshape(-1, 1)
+        gpr.fit(x_train, training_data[:, 1])
+        print(f"GP score: {gpr.score(x_train, training_data[:, 1])}")
+        T_GP = np.linspace(T_min, T_max, 1000).reshape(-1, 1)
         T_plot = T_GP.flatten()
 
+    EOS_set = []
 
-#now, we must convert the log values in blog flag BACK to original values (no negatives) and plot T_Plot
-
-#first simulate the y values----we only need an x values to do so.
-
-
-    x_working_set=[]
-    y_working_set=[] #this is the equivalent of the Working_EOS_set=[] set
-
-    number_iterations_while=[]
-
-
-    working_simulated_1_derivitive=[]
-    working_simulated_2_derivitive=[]
-    working_simulated_sound=[]
-
-    working_computed_speed_sound=[]
-    working_computed_e=[]
-
-    working_trial_number=[]
-
-    min_simulated_pressure=[]
-    max_simulated_pressure=[]
-
-    min_data = np.min(x_train)
-    max_data = np.max(x_train)
-    print(f"Minimum of the datapoints is: {min_data}")
-    print(f"Maximum of the datapoints is: {max_data}\n-------------------------")
-
-    i=0
-    f=0
-    batch_size=100
-    iter=0
-    #T_GP ARE the simulated x points
-    while i < number_of_successful_trials:
-#this is because we draw from a data set with p/t^4
-        P_divide_Tto4 = gpr.sample_y(T_GP, batch_size, random_state=randomness).transpose() #this is randomly---we produce 1000 samples that are each 996 in array size after we slice
-# ----the sample_y expects 2D array with x values and a fitted y value (through the GPR) so that we create MULTIPLE SAMPLES of possible y values to use
-
-#notice that because we neither flattern nor reshape t_gp, the linspace function can now do what its made for: creating arrays inside a numpy array.
-
-
-        P=P_divide_Tto4[0,:]*T_GP.flatten()**4 #here, p is an ARRAY of ARRAYS from the transpose function, they are ALL y values #we must use T_GP to make the linspace simulated values
-
-
-        #print(P)
-        for sample_i in P_divide_Tto4: #the loop will stop here when all the numpy arrays in the array of P has been iterated and tested---->all the generated arrays have been tested--->we will generate the first len(number_of_successful_trials) that match the combine_filter
-        #here, sample_i is already sliced because of the T_GP slicing
-            #Working_EOS_set = []
-            if blogflag:
-                P_plot = (np.exp(sample_i)*T_plot**4)
+    iSuccess = 0
+    iter = 0
+    nsamples_per_batch = 100
+    while iSuccess < number_of_EoS:
+        PoverT4_GP = gpr.sample_y(T_GP, nsamples_per_batch,
+                                  random_state=randomness).transpose()
+        for sample_i in PoverT4_GP:
+            if bLogFlag:
+                P_GP = np.exp(sample_i)*(T_plot**4)       # convert to P
             else:
-                P_plot = ((sample_i)*T_plot**4)
+                P_GP = sample_i*(T_plot**4)       # convert to P
+            if is_a_physical_eos(T_plot, P_GP):
+                EOS_set.append(P_GP)
+                iSuccess += 1
+                if iSuccess == number_of_EoS:
+                    break
+        iter += nsamples_per_batch
+        print(f"Sample success rate: {float(iSuccess)/iter:.3f}")
 
-            # the derivitives that work for derivitive, 2nd derivitive, and sound values will work for the P_plot AND the Pover4 values----each value that doesn't work will lokely not work for the Pover4 value
-            derivitive_1_append_list(T_plot.flatten(), P_plot, slope, working_simulated_1_derivitive)
-            derivitive_2_append_list(T_plot.flatten(), P_plot, slope, working_simulated_2_derivitive)
-            speed_sound_squared_append_list(T_plot.flatten(), P_plot, working_simulated_sound)
+    # make verification plots
+    plt.figure()
+    plt.scatter(training_data[:, 0], training_data[:, 1],
+                marker='x', color='r', s=20, label="training data")
+    plt.scatter(validation_data[:, 0], validation_data[:, 1],
+                marker='+', color='b', s=20, label="validation data")
+    for i in range(number_of_EoS):
+        plt.plot(T_plot, EOS_set[i]/T_plot**4, '-')
 
+    plt.legend()
+    plt.xlim([0, 1.])
+    #plt.ylim([0, 4.5])
+    plt.xlabel(r"T (GeV)")
+    plt.ylabel(r"$P/T^{4}$")
+    plt.show()
 
-            if combine_all_filters(T_plot.flatten(),P_plot,slope)==True:
-                x_working_set.append(T_plot.flatten())
-                y_working_set.append(P_plot)  # appending this is different than appending P_plot
-                i = i + 1
-                print(f"\nWorking Pairs Set {i} Above:\n---------------------------------------", end='\n')
+    # plot e vs T
+    plt.figure()
+    for i in range(number_of_EoS):
+        e = compute_energy_density(T_plot, EOS_set[i])
+        plt.plot(T_plot, e/T_plot**4, '-')
 
-                min_sim = np.min(sample_i)
-                max_sim = np.max(sample_i)
+    plt.xlim([0, 1.])
+    #plt.ylim([0, 15])
+    plt.xlabel(r"T (GeV)")
+    plt.ylabel(r"$e/T^4$")
+    plt.show()
 
-                min_simulated_pressure.append(min_sim)
-                max_simulated_pressure.append(max_sim)
-                working_trial_number.append(f + 1)
+    # plot cs^2 vs T
+    plt.figure()
+    for i in range(number_of_EoS):
+        cs2 = compute_speed_of_sound_square(T_plot, EOS_set[i])
+        plt.plot(T_plot, cs2, '-')
 
-                c_squared = compute_speed_of_sound_square(T_plot.flatten(),P_plot)
-                working_computed_speed_sound.append(c_squared)
-                computed_e_divide_T4 = compute_value_of_et4(T_plot.flatten(), P_plot)
-                working_computed_e.append(computed_e_divide_T4)
+    plt.xlim([0, 1.])
+    plt.ylim([0, 0.6])
+    plt.xlabel(r"T (GeV)")
+    plt.ylabel(r"$c_s^2$")
+    plt.show()
 
+    # create file with EoS table for one EoS with evenly spaced T values
+    write_EOS_table_for_plot = False
+    if write_EOS_table_for_plot:
+        EoS_chosen = 0
+        # write T, P/T^4, e/T^4, s/T^3, cs^2 to a file
+        data = np.column_stack((T_plot, EOS_set[EoS_chosen]/T_plot**4,
+                compute_energy_density(T_plot, EOS_set[EoS_chosen])/T_plot**4,
+                compute_entropy_density(T_plot, EOS_set[EoS_chosen])/T_plot**3,
+                compute_speed_of_sound_square(T_plot, EOS_set[EoS_chosen])))
+        np.savetxt(f"EoS{EoS_chosen}.dat", data)
 
-            number_iterations_while.append(f + 1)
-            f = f + 1
-            if number_of_successful_trials==i:
-                break
-
-        # print(f"value i{i}")
-        # print(f"value i{f}")
-        print(f"For loop success rate: {float(i) / f:.8f}\n----------------------------------------------") #this is the number of times the for loop runs successfully (i values) over the total runs by f
-
-#here, we have to GRAPH the generated points with the y values corresponding so that we get line graph
-
-
-
-#here, we HAVE to remove the data points that are invalid.
-    pressure_original_data = train_masked_x[:, 0].flatten() ** 4 * train_masked_x[:, 1]
-    sound_squared_orginial_dataset = compute_speed_of_sound_square(train_masked_x[:, 0].flatten(), pressure_original_data)
-    pressure_test_data = test_masked_x[:, 0].flatten() ** 4 * test_masked_x[:, 1]
-    sound_squared_test_dataset = compute_speed_of_sound_square(test_masked_x[:, 0].flatten(), pressure_test_data)
-    train_energy_density_set = compute_value_of_et4(train_masked_x[:, 0].flatten(), pressure_original_data)
-    test_energy_density_set = compute_value_of_et4(test_masked_x[:, 0].flatten(), pressure_test_data)
-
-
-
-
-    print(f"Filter repeats needed:{working_trial_number[-1]}")
-    print(f"Trials needed for successful sample 1: {working_trial_number[0]}")
-    for t in range(1, len(working_trial_number)):
-        print(f"Trials needed for successful sample {t+1}: {working_trial_number[t]-working_trial_number[t-1]}")
-
-
-    for t in range(0, len(working_trial_number)):
-        print(f"Min y Simulated Point [P/T^4] for Case {t+1}: {min_simulated_pressure[t]}")
-        print(f"Max y Simulated Point [P/T^4] for Case: {t + 1}: {max_simulated_pressure[t]}")
-
-# -------------------------------------------------
-        # invert the EoS tables by getting the T values from linspace e values then using the T values interpolate for P
-
-
-
+    # invert the EoS tables
     e_list_EoS = []
     P_list_EoS = []
     T_list_EoS = []
-
-    total_while_list=[]
-
-
-    for i in range (number_of_successful_trials):
-        if (i + 1) % 100 == 0:  # if our iteration is dividable by 0, (and have successfully been uploaded, we will show the progress using the print)
-            print(f"Inverting EoS table {i + 1}/{number_of_successful_trials}")
-
-
-        e_linspace_interpolate, P_interpolate, T_interplolate,one_while_list = invert_EoS_tables(T_plot, y_working_set[i])
-
-        total_while_list.append(one_while_list)
-
-        e_list_EoS.extend([e_linspace_interpolate])
-        P_list_EoS.extend([P_interpolate])
-        T_list_EoS.extend([T_interplolate])
+    for i in range(number_of_EoS):
+        if (i+1) % 100 == 0:
+            print(f"Inverting EoS table {i+1}/{number_of_EoS}")
+        e_list, P_list, T_list = invert_EoS_tables(T_plot, EOS_set[i])
+        e_list_EoS.extend([e_list])
+        P_list_EoS.extend([P_list])
+        T_list_EoS.extend([T_list])
 
     # write the EoS to a file
     EoS_file_writer(e_list_EoS, P_list_EoS, T_list_EoS, f"EoS.pkl")
-    print("EOS data has been interpolated and dumped into Pickle File as 'EoS.pkl'\n------------------------------")
-
-
-
-    print(total_while_list) #all values are 100 except for the last value---Extanoues solution?
-#------------------------------------------------------------
-
-
-
-    plt.scatter(number_iterations_while,working_simulated_1_derivitive, label='Number of Satisfied Trials per loop')
-    plt.xlabel('Filter Number')
-    plt.ylabel('Equivalent Matching Points')
-    plt.title(f"Graph of 1st Derivitive of Each Trial, Trials Needed: {working_trial_number[-1]}")
-
-    # plt.axhline(y=linspace_simulated_points, color='r', linestyle='--')
-    # plt.yticks(ticks=np.append(plt.yticks()[0], linspace_simulated_points), labels=list(plt.yticks()[0]) + [f'{linspace_simulated_points}'])
-    # for k in range (0, len(working_trial_number)):#creates veticle lines to indicate where the working x values lie on the x-axis
-    #     plt.axvline(x=working_trial_number[k], color='r', linestyle='--')
-    # for tick in working_trial_number:
-    #     plt.text(tick, linspace_simulated_points, f'{tick}', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transData, color='k')
-
-    plt.legend(title="Legend", loc='upper left', fontsize='x-small')
-    plt.show()
-#--------------------------------------------
-    plt.scatter(number_iterations_while,working_simulated_2_derivitive, label='Number of Satisfied Trials per loop')
-    plt.xlabel('Filter Number')
-    plt.ylabel('Equivalent Matching Points')
-    plt.title(f"Graph of 2nd Derivitive of Each Trial, Trials Needed: {working_trial_number[-1]}")
-
-    # plt.axhline(y=linspace_simulated_points, color='r', linestyle='--')
-    # plt.yticks(ticks=np.append(plt.yticks()[0], linspace_simulated_points), labels=list(plt.yticks()[0]) + [f'{linspace_simulated_points}'])
-    # for k in range (0, len(working_trial_number)): #creates veticle lines to indicate where the working x values lie on the x-axis
-    #     plt.axvline(x=working_trial_number[k], color='r', linestyle='--')
-    # for tick in working_trial_number:
-    #     plt.text(tick, linspace_simulated_points, f'{tick}', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transData, color='k')
-
-    plt.legend(title="Legend", loc='upper left', fontsize='x-small')
-    plt.show()
-#--------------------------------------
-    plt.scatter(number_iterations_while,working_simulated_sound, label='Number of Satisfied Trials per loop')
-    plt.xlabel('Filter Number')
-    plt.ylabel('Equivalent Matching Points')
-    plt.title(f"Graph of Sound Value of Each Trial, Trials Needed: {working_trial_number[-1]}")
-
-
-    # plt.axhline(y=linspace_simulated_points, color='r', linestyle='--')
-    # plt.yticks(ticks=np.append(plt.yticks()[0], linspace_simulated_points), labels=list(plt.yticks()[0]) + [f'{linspace_simulated_points}'])
-    # for k in range (0, len(working_trial_number)):#creates veticle lines to indicate where the working x values lie on the x-axis
-    #     plt.axvline(x=working_trial_number[k], color='r', linestyle='--')
-    # for tick in working_trial_number:
-    #     plt.text(tick, linspace_simulated_points, f'{tick}', horizontalalignment='center', verticalalignment='center', transform=plt.gca().transData, color='k')
-
-
-    plt.legend(title="Legend", loc='upper left', fontsize='x-small')
-    plt.show()
-
-    plt.figure(figsize=(10, 5))
-
-
-    #we have to CHANGE our y_train to match the values of t_plot and simulate sample_y from here.
-    for i in range (len(x_working_set)):
-        x_i=x_working_set[i].reshape(-1,1)
-        y_i=y_working_set[i]
-        plt.plot(x_i.flatten(),y_i/(x_i.flatten()**4), lw=1, ls='-', label=f'Filtered Curve {i+1}') #this will give the value for p/t^4
-    plt.scatter(train_masked_x[:, 0][sliced_amount:-sliced_amount], train_masked_x[:, 1][sliced_amount:-sliced_amount], marker='x', color='r', s=10, label=f"Number Original Data Points: {len(train_masked_x[sliced_amount:-sliced_amount])}")
-    plt.scatter(test_masked_x[:, 0][sliced_amount:-sliced_amount], test_masked_x[:, 1][sliced_amount:-sliced_amount], marker='x', color='orange', s=10, label=f"Number Test Data Points: {len(test_masked_x[:, 0][sliced_amount:-sliced_amount])}")
-    plt.title(f'Filtered Gaussian Predict Curve, Filter: dy/dx > {slope}, d^2y/dx^2 > 2nd derivitive, sound squared restraint')
-    plt.xlabel("x--[Temperature (GEV)]")
-    plt.ylabel("y--[P$T^{-4}$]")
-    #plt.legend(title="Legend", loc='lower right', fontsize='x-small')
-    plt.show()
-
-    # print(len(train_masked_x[:, 0][sliced_amount:-sliced_amount]))
-    # print(len(sound_squared_orginial_dataset))
-    for i in range(len(x_working_set)):
-        x_i = x_working_set[i].reshape(-1, 1)
-        plt.plot(x_i.flatten(), working_computed_speed_sound[i], lw=1, ls='-',label=f'Working Speed Number {i+1}')
-    plt.title(f'Speed of Sound Curve')
-    plt.xlabel("x--[Temperature (GEV)]")
-    plt.ylabel("y--[Speed of Sound Squared c^2]")
-    plt.scatter(train_masked_x[:, 0][sliced_amount:-sliced_amount], sound_squared_orginial_dataset[sliced_amount:-sliced_amount], marker='x', color='r', s=10, label=f"Original Dataset Sound Squared, Number Data: {len(train_masked_x[:, 0][sliced_amount:-sliced_amount])}")
-    plt.scatter(test_masked_x[:, 0][sliced_amount:-sliced_amount], sound_squared_test_dataset[sliced_amount:-sliced_amount], marker='x', color='orange', s=10, label=f"Test Dataset Sound Squared, Number Data: {len(test_masked_x[:, 0][sliced_amount:-sliced_amount])}")
-    #plt.legend(title="Legend", loc='lower right', fontsize='x-small')
-    plt.show()
-
-    for i in range(len(x_working_set)):
-        x_i = x_working_set[i].reshape(-1, 1)
-        plt.plot(x_i.flatten(), working_computed_e[i], lw=1, ls='-',label=f'Working Energy Density Graph Number: {i+1}')
-    plt.title(f'Energy Density Curve')
-    plt.xlabel("x--[Temperature (GEV)]")
-    plt.ylabel("y--[e/T^4]")
-    #here, we use slices to get rid of extraneous values/outliers that create the verticle lines at the end of the graph
-    plt.scatter(train_masked_x[:, 0][sliced_amount:-sliced_amount], train_energy_density_set[sliced_amount:-sliced_amount], marker='x', color='r', s=10, label=f"Original Dataset Energy Density, Number Data: {len(train_masked_x[:, 0][sliced_amount:-sliced_amount])}")
-    plt.scatter(test_masked_x[:, 0][sliced_amount:-sliced_amount], test_energy_density_set[sliced_amount:-sliced_amount], marker='x', color='orange', s=10, label=f"Test Dataset Energy Density, Number Data: {len(test_masked_x[:, 0][sliced_amount:-sliced_amount])}")
-    #plt.legend(title="Legend", loc='lower right', fontsize='x-small')
-    plt.show()
-
-
-
-
 
 
 if __name__ == "__main__":
-    #by setting a main function, all the contollable variables can be set here.
-    ranSeed = 20
-    slope=0
-    linspace_simulated_points = 1000
-    number_of_successful_trials = 1000
-    sliced_amount=0 #this will also slice the number of linspace_generated points to match the shapes of all the appended lists.
-    blogflag=True #tests if we want smaller intervals by scaling down to a log size to project data through linspace function
-    min_mask_x_values=0.20 #these values will detmerain how restricted the curve is at certain x values----how much variation we want in this interval-- also determains the GP score along with the effectiveness of the for loop in training.
-    max_mask_x_values=0.25
-    main(ranSeed,slope, linspace_simulated_points, number_of_successful_trials,sliced_amount,min_mask_x_values, max_mask_x_values, blogflag)
+    ranSeed = 23
+    number_of_EoS = 1000
+    bLogFlag = True
+    min_T_mask_region = 0.13
+    max_T_mask_region = 0.7
+    use_anchor_point = False
+    anchor_point = (0.22, 3.) # anchor point for the GP (T, P/T^4)
+    main(ranSeed, number_of_EoS, min_T_mask_region, max_T_mask_region, 
+         bLogFlag, use_anchor_point, anchor_point)
